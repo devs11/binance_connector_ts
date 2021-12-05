@@ -27,7 +27,6 @@ class TelegramNotifyer {
     }
     send_msg(message) {
         let botUrl = this.url + this.bot + ":" + this.key + "/sendMessage?chat_id=" + this.chatid + "&text=" + message;
-        console.log(botUrl);
         (0, https_1.get)(botUrl);
         console.log("Telegram Message dispatched!");
     }
@@ -79,13 +78,15 @@ class MongoDBconnector {
 }
 class WsConnector {
     // remove retry count?
-    constructor(mdb, streamkey, retry_count = 5, timeout = 10000 /*ms*/) {
+    constructor(mdb, streamkey, telegramAlert, retry_count = 5, timeout = 10000 /*ms*/) {
         this.mdb = mdb; // mongoDB connector
         this.streamkey = streamkey; // name of the stream
+        this.telegramAlert = telegramAlert;
         this.retry_count = retry_count;
         this.timeout = timeout;
         this.pairs = [];
         this.depth = 20;
+        this.url = "";
     }
     connect(url, pairs, depth = 20) {
         if (url.charAt(url.length - 1) != "/") {
@@ -93,25 +94,33 @@ class WsConnector {
         }
         this.url = url + "stream?streams=" + this.streamkey;
         this.ws = new ws_1.default(this.url);
+        this.pairs = pairs;
+        this.depth = depth;
         this.ws.on("open", () => this.subscribe(pairs, depth));
         this.ws.on("message", this.onMessage.bind(this));
         this.ws.on("close", () => this.retryConnection(url));
-        this.ws.on("error", () => console.log("error with websocket!"));
+        this.ws.on("error", this.onError.bind(this));
     }
     retryConnection(url) {
         return __awaiter(this, void 0, void 0, function* () {
             let reconnectionCount = 0;
             console.log("disconnected, retrying connection");
-            this.ws = new ws_1.default(url);
+            this.telegramAlert.send_msg("disconnected, retrying connection");
+            yield this.connect(this.url, this.pairs, this.depth);
             // TODO retry count?
             while (this.ws.readyState != ws_1.default.OPEN) {
-                this.ws = new ws_1.default(url);
                 console.log("Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout / 1000 + "s");
+                this.telegramAlert.send_msg("Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout / 1000 + "s");
                 yield new Promise(f => setTimeout(f, this.timeout));
+                yield this.connect(this.url, this.pairs, this.depth);
                 reconnectionCount += 1;
             }
         });
     }
+    onError(e) {
+        this.telegramAlert.send_msg("ERROR with depth_connector_mongo.js websocket!");
+    }
+    ;
     subscribe(pairs, depth = 20) {
         this.pairs = pairs;
         this.depth = depth;
@@ -166,7 +175,6 @@ class WsConnector {
 }
 // progst
 let notifier = new TelegramNotifyer("bot2140834908", "AAHMHizO44TOo8L5fh3TdW0LQJIY1rJ9ogs", "2137572068");
-notifier.send_msg("TEST");
 const mongo_url = "mongodb://localhost:27017/";
 const dbname = "binance_depth";
 let depth = 20;
@@ -177,7 +185,7 @@ const pairs = ['XRPBTC', 'XRPBNB', 'XRPETH', 'XRPUSDT', 'ADABTC', 'ADAETH', 'ADA
 // const pairs = ['BTCUSDT'];
 let mdb = new MongoDBconnector(mongo_url, dbname);
 mdb.connect();
-let wssconnection = new WsConnector(mdb, "depth");
+let wssconnection = new WsConnector(mdb, "depth", notifier);
 wssconnection.connect(wss_url, pairs, depth);
 process.on("SIGINT", function () {
     console.log("Caught SIGINT Signal");

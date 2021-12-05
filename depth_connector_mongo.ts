@@ -114,7 +114,7 @@ class WsConnector {
 	streamkey: string;
 	retry_count: number;
 	timeout: number;
-	url?: string;
+	url: string;
 
 	ws: any;
 
@@ -127,6 +127,7 @@ class WsConnector {
 		this.timeout = timeout;
 		this.pairs = [];
 		this.depth = 20;
+		this.url = "";
 	}
 
 	connect(url: string, pairs: string[], depth: number = 20) {
@@ -135,6 +136,8 @@ class WsConnector {
 		}
 		this.url = url + "stream?streams=" + this.streamkey;
 		this.ws = new WebSocket(this.url);
+		this.pairs = pairs;
+		this.depth = depth;
 
 		this.ws.on("open", () => this.subscribe(pairs, depth));
 		this.ws.on("message", this.onMessage.bind(this));
@@ -146,13 +149,13 @@ class WsConnector {
 		let reconnectionCount: number = 0;
 		console.log("disconnected, retrying connection");
 		this.telegramAlert.send_msg("disconnected, retrying connection");
-		this.ws = new WebSocket(url);
+		await this.connect(this.url, this.pairs, this.depth);
 		// TODO retry count?
 		while (this.ws.readyState != WebSocket.OPEN) {
-			this.ws = new WebSocket(url);
 			console.log("Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout/1000 + "s");
 			this.telegramAlert.send_msg("Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout/1000 + "s");
 			await new Promise(f => setTimeout(f, this.timeout));
+			await this.connect(this.url, this.pairs, this.depth);
 			reconnectionCount += 1; 
 		}
 	}
