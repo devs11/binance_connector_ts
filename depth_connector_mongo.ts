@@ -97,7 +97,7 @@ class MongoDBconnector {
 		collection.insertOne(record).catch( (e) => {
 			console.error(e);
 		});
-		console.log(dbname);
+		// console.log(dbname);
 		// console.log(record);
 	}
 
@@ -117,6 +117,7 @@ class WsConnector {
 	url: string;
 
 	ws: any;
+	msgCounter: number= 0;
 
 	// remove retry count?
 	constructor(mdb: any, streamkey: string, telegramAlert: TelegramNotifyer, retry_count: number = 5, timeout: number = 10000 /*ms*/) {
@@ -128,6 +129,7 @@ class WsConnector {
 		this.pairs = [];
 		this.depth = 20;
 		this.url = "";
+		
 	}
 
 	connect(url: string, pairs: string[], depth: number = 20) {
@@ -212,6 +214,10 @@ class WsConnector {
 	}
 
 	onMessage(rcvBytes: Buffer) {
+		this.msgCounter = this.msgCounter + 1;
+		process.stdout.write(""+this.msgCounter);
+		process.stdout.cursorTo(0);
+
 		let binanceStream: BinanceStream = JSON.parse(rcvBytes.toString("utf8"));
 		
 		if (binanceStream.data) {
@@ -220,40 +226,55 @@ class WsConnector {
 	}
 
 	close() {
+		// disenage callback
+		this.ws.on("close");
 		this.ws.close();
 		console.log("ws closed");
 	}
 }
 
 
+async function main() {
+	// progst
+
+	let notifier = new TelegramNotifyer("bot2140834908", "AAHMHizO44TOo8L5fh3TdW0LQJIY1rJ9ogs", "2137572068");
+
+	const mongo_url: string = "mongodb://localhost:27017/";
+	// const mongo_url: string = "mongodb://binance_depth:9iegZ3fDZTkPPQRMqJZ2@dev-sql.slice.local:27017?retryWrites=true&w=majority&authSource=binance_depth";
+	// const mongo_url: string = "mongodb://admin:8uApV8s6dhgiV83KHUvX@dev-sql.slice.local:27017?retryWrites=true&w=majority";
+	const dbname: string = "binance_depth";
+
+	let depth = 20; 
+	const wss_retry_count = 5;
+	const wss_retry_timeout = 1000; //delay in ms
+	const wss_url = 'wss://stream.binance.com:9443/';
+
+	const pairs = ['XRPBTC', 'XRPBNB', 'XRPETH', 'XRPUSDT', 'ADABTC', 'ADAETH', 'ADABNB', 'ADAUSDT', 'LINKBTC', 'LINKETH', 'LINKUSDT', 'LTCBTC', 'LTCETH', 'LTCBNB', 'LTCUSDT', 'XLMBTC', 'XLMETH', 'XLMBNB', 'XLMUSDT', 'XMRBTC', 'XMRETH', 'XMRBNB', 'XMRUSDT', 'TRXBTC', 'TRXETH', 'TRXBNB', 'TRXUSDT', 'VETBTC', 'VETETH', 'VETBNB', 'VETUSDT', 'NEOBTC', 'NEOETH', 'NEOBNB', 'NEOUSDT', 'ATOMBTC', 'ATOMBNB', 'ATOMUSDT', 'ETCBTC', 'ETCETH', 'ETCBNB', 'ETCUSDT', 'ZECBTC', 'ZECETH', 'ZECBNB', 'ZECUSDT', 'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ETHBTC', 'BNBBTC', 'BNBETH']
+	// const pairs = ['BTCUSDT'];
 
 
+	let mdb = new MongoDBconnector(mongo_url, dbname);
+	await mdb.connect();
+	let wssconnection = new WsConnector(mdb, "depth", notifier);
+	await wssconnection.connect(wss_url, pairs, depth);
 
-// progst
+	// check every 5 seconds if any messages were recieved
+	let timeout: number = 10000;
+	setInterval(function () {
+		if (wssconnection.msgCounter == 0) {
+			notifier.send_msg("binance_depth connection stuck with 0 recieved messages");
+		}
+		console.log(Date(), "recieved", wssconnection.msgCounter, "messages, thats", wssconnection.msgCounter/(timeout/1000), "messages per second, subscribed pairs count:", wssconnection.pairs.length);
+		wssconnection.msgCounter = 0;
+	}, timeout); 
 
-let notifier = new TelegramNotifyer("bot2140834908", "AAHMHizO44TOo8L5fh3TdW0LQJIY1rJ9ogs", "2137572068");
+	process.on("SIGINT", async function() {
+		console.log("Caught SIGINT Signal");
+		await wssconnection.unsubscribe(pairs, depth);
+		await wssconnection.close();
+		await mdb.disconnect();
+	})
+}
 
-const mongo_url: string = "mongodb://localhost:27017/";
-const dbname: string = "binance_depth";
+main();
 
-let depth = 20; 
-const wss_retry_count = 5;
-const wss_retry_timeout = 1000; //delay in ms
-const wss_url = 'wss://stream.binance.com:9443/';
-
-const pairs = ['XRPBTC', 'XRPBNB', 'XRPETH', 'XRPUSDT', 'ADABTC', 'ADAETH', 'ADABNB', 'ADAUSDT', 'LINKBTC', 'LINKETH', 'LINKUSDT', 'LTCBTC', 'LTCETH', 'LTCBNB', 'LTCUSDT', 'XLMBTC', 'XLMETH', 'XLMBNB', 'XLMUSDT', 'XMRBTC', 'XMRETH', 'XMRBNB', 'XMRUSDT', 'TRXBTC', 'TRXETH', 'TRXBNB', 'TRXUSDT', 'VETBTC', 'VETETH', 'VETBNB', 'VETUSDT', 'NEOBTC', 'NEOETH', 'NEOBNB', 'NEOUSDT', 'ATOMBTC', 'ATOMBNB', 'ATOMUSDT', 'ETCBTC', 'ETCETH', 'ETCBNB', 'ETCUSDT', 'ZECBTC', 'ZECETH', 'ZECBNB', 'ZECUSDT', 'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ETHBTC', 'BNBBTC', 'BNBETH']
-// const pairs = ['BTCUSDT'];
-
-
-let mdb = new MongoDBconnector(mongo_url, dbname);
-mdb.connect();
-let wssconnection = new WsConnector(mdb, "depth", notifier);
-wssconnection.connect(wss_url, pairs, depth);
-
-
-process.on("SIGINT", function() {
-	console.log("Caught SIGINT Signal");
-	wssconnection.unsubscribe(pairs, depth);
-	wssconnection.close();
-	mdb.disconnect();
-})
