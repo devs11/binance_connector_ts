@@ -215,8 +215,10 @@ class WsConnector {
 
 	onMessage(rcvBytes: Buffer) {
 		this.msgCounter = this.msgCounter + 1;
-		process.stdout.write(""+this.msgCounter);
-		process.stdout.cursorTo(0);
+		if (process.stdout.isTTY) {
+			process.stdout.write(""+this.msgCounter);
+			process.stdout.cursorTo(0);
+		}
 
 		let binanceStream: BinanceStream = JSON.parse(rcvBytes.toString("utf8"));
 		
@@ -241,7 +243,6 @@ async function main() {
 
 	const mongo_url: string = "mongodb://localhost:27017/";
 	// const mongo_url: string = "mongodb://binance_depth:9iegZ3fDZTkPPQRMqJZ2@dev-sql.slice.local:27017?retryWrites=true&w=majority&authSource=binance_depth";
-	// const mongo_url: string = "mongodb://admin:8uApV8s6dhgiV83KHUvX@dev-sql.slice.local:27017?retryWrites=true&w=majority";
 	const dbname: string = "binance_depth";
 
 	let depth = 20; 
@@ -250,7 +251,6 @@ async function main() {
 	const wss_url = 'wss://stream.binance.com:9443/';
 
 	const pairs = ['XRPBTC', 'XRPBNB', 'XRPETH', 'XRPUSDT', 'ADABTC', 'ADAETH', 'ADABNB', 'ADAUSDT', 'LINKBTC', 'LINKETH', 'LINKUSDT', 'LTCBTC', 'LTCETH', 'LTCBNB', 'LTCUSDT', 'XLMBTC', 'XLMETH', 'XLMBNB', 'XLMUSDT', 'XMRBTC', 'XMRETH', 'XMRBNB', 'XMRUSDT', 'TRXBTC', 'TRXETH', 'TRXBNB', 'TRXUSDT', 'VETBTC', 'VETETH', 'VETBNB', 'VETUSDT', 'NEOBTC', 'NEOETH', 'NEOBNB', 'NEOUSDT', 'ATOMBTC', 'ATOMBNB', 'ATOMUSDT', 'ETCBTC', 'ETCETH', 'ETCBNB', 'ETCUSDT', 'ZECBTC', 'ZECETH', 'ZECBNB', 'ZECUSDT', 'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ETHBTC', 'BNBBTC', 'BNBETH']
-	// const pairs = ['BTCUSDT'];
 
 
 	let mdb = new MongoDBconnector(mongo_url, dbname);
