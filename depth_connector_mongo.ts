@@ -26,8 +26,13 @@ class TelegramNotifyer {
 	send_msg(message: string) {
 		if (this.bot_enable) {
 			let botUrl: string = this.url + this.bot + ":" + this.key + "/sendMessage?chat_id=" + this.chatid + "&text=" + message;
-			get(botUrl);
-			Logger.log("Telegram Message dispatched!");
+			try {
+				get(botUrl);
+				Logger.log("Telegram Message dispatched!");
+			} catch (e) {
+				Logger.error("could not send telegram message!");
+				Logger.error(e);
+			}
 		}
 	}
 }
@@ -54,7 +59,7 @@ interface BinanceStream {
 
 interface ConfigFile {
 	"general": {
-        "log_interval": number,
+        "check_interval": number,
         "enable_log": Boolean,
 		"enable_err": Boolean,
         "enable_telegram_alert": Boolean,
@@ -340,10 +345,10 @@ async function main() {
 			wssconnection.subscribe(configFile.binance.pairs, configFile.binance.depth);
 		}
 		if (configFile.general.enable_log) {
-			console.log(Date(),  "recieved",  wssconnection.msgCounter,  "messages, thats",  wssconnection.msgCounter/(configFile.binance.timeout/1000),  "messages per second,  subscribed pairs count:",  wssconnection.pairs.length);
+			console.log(Date(),  "recieved",  wssconnection.msgCounter,  "messages, thats",  wssconnection.msgCounter/(configFile.general.check_interval/1000),  "messages per second,  subscribed pairs count:",  wssconnection.pairs.length);
 		}
 		wssconnection.msgCounter = 0;
-	}, configFile.binance.timeout); 
+	}, configFile.general.check_interval); 
 
 	process.on("SIGINT", async function() {
 		Logger.log("Caught SIGINT Signal");

@@ -30,8 +30,14 @@ class TelegramNotifyer {
     send_msg(message) {
         if (this.bot_enable) {
             let botUrl = this.url + this.bot + ":" + this.key + "/sendMessage?chat_id=" + this.chatid + "&text=" + message;
-            (0, https_1.get)(botUrl);
-            Logger.log("Telegram Message dispatched!");
+            try {
+                (0, https_1.get)(botUrl);
+                Logger.log("Telegram Message dispatched!");
+            }
+            catch (e) {
+                Logger.error("could not send telegram message!");
+                Logger.error(e);
+            }
         }
     }
 }
@@ -191,8 +197,6 @@ class WsConnector {
             process.stdout.write("" + this.msgCounter);
             process.stdout.cursorTo(0);
         }
-        console.log(JSON.parse(rcvBytes.toString("utf8")));
-        console.log(this.msgCounter);
         let binanceStream = JSON.parse(rcvBytes.toString("utf8"));
         if (binanceStream.data) {
             this.mdb.write_dataset(binanceStream);
@@ -245,11 +249,10 @@ function main() {
                 wssconnection.subscribe(configFile.binance.pairs, configFile.binance.depth);
             }
             if (configFile.general.enable_log) {
-                console.log(Date(), "recieved", wssconnection.msgCounter, "messages, thats", wssconnection.msgCounter / (configFile.binance.timeout / 1000), "messages per second,  subscribed pairs count:", wssconnection.pairs.length);
+                console.log(Date(), "recieved", wssconnection.msgCounter, "messages, thats", wssconnection.msgCounter / (configFile.general.check_interval / 1000), "messages per second,  subscribed pairs count:", wssconnection.pairs.length);
             }
-            wssconnection.unsubscribe(configFile.binance.pairs, configFile.binance.depth);
             wssconnection.msgCounter = 0;
-        }, configFile.binance.timeout);
+        }, configFile.general.check_interval);
         process.on("SIGINT", function () {
             return __awaiter(this, void 0, void 0, function* () {
                 Logger.log("Caught SIGINT Signal");
