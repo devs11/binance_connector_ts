@@ -10,7 +10,7 @@ class TelegramNotifyer {
 	bot: string;
 	key: string;
 	chatid: string;
-	url: string;
+	uri: string;
 
 	constructor(bot_enable: Boolean, bot: string, key: string, chatid: string, url: string = "https://api.telegram.org") {
 		this.bot_enable = bot_enable;
@@ -20,16 +20,16 @@ class TelegramNotifyer {
 		if (url.charAt(url.length -1) != "/") {
 			url = url + "/";
 		}
-		this.url = url;
+		this.uri = url;
 	}
 
 	send_msg(message: string) {
 		if (this.bot_enable) {
-			let botUrl: string = this.url + this.bot + ":" + this.key + "/sendMessage?chat_id=" + this.chatid + "&text=" + message;
+			let botUrl: string = this.uri + this.bot + ":" + this.key + "/sendMessage?chat_id=" + this.chatid + "&text=" + message;
 			try {
 				get(botUrl);
 				Logger.log("Telegram Message dispatched!");
-			} catch (e) {
+			} catch (e: any) {
 				Logger.error("could not send telegram message!");
 				Logger.error(e);
 			}
@@ -107,7 +107,7 @@ class MongoDBconnector {
 		} else {
 			this.db_url = "mongodb://" + configFile.mongodb.mongodb_host + ":" + configFile.mongodb.mongodb_port;
 		}
-		console.log(this.db_url);
+		Logger.log("Database URI: " + this.db_url);
 		this.db_name = configFile.mongodb.mongodb_database;
 		this.telegramAlert = telegramAlert;
 		this.mclient = new MongoClient(this.db_url);
@@ -177,7 +177,7 @@ class WsConnector {
 	streamkey: string;
 	retry_count: number;
 	timeout: number;
-	url: string;
+	uri: string;
 
 	ws: any;
 	msgCounter: number= 0;
@@ -191,7 +191,7 @@ class WsConnector {
 		this.timeout = configFile.binance.timeout;
 		this.pairs = [];
 		this.depth = 20;
-		this.url = "";
+		this.uri = "";
 		this.telegramAlert = telegramAlert;
 		
 	}
@@ -200,8 +200,9 @@ class WsConnector {
 		if (url.charAt(url.length -1) != "/") {
 			url = url + "/";
 		}
-		this.url = url + "stream?streams=" + this.streamkey;
-		this.ws = new WebSocket(this.url);
+		this.uri = url + "stream?streams=" + this.streamkey;
+		Logger.log("Binance URI: " + this.uri);
+		this.ws = new WebSocket(this.uri);
 		this.pairs = pairs;
 		this.depth = depth;
 
@@ -209,20 +210,21 @@ class WsConnector {
 		this.ws.on("message", this.onMessage.bind(this));
 		this.ws.on("close", () => this.retryConnection(url));
 		this.ws.on("error", this.onError.bind(this));
+		Logger.log("Websocket connected.");
 	}
 
 	async retryConnection(url: string) {
 		let reconnectionCount: number = 0;
 		Logger.log("disconnected, retrying connection");
 		this.telegramAlert.send_msg("disconnected, retrying connection");
-		await this.connect(this.url, this.pairs, this.depth);
+		await this.connect(this.uri, this.pairs, this.depth);
 		// TODO retry count?
 		while (this.ws.readyState != WebSocket.OPEN) {
 			Logger.log("Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout/1000 + "s");
 
 			this.telegramAlert.send_msg("Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout/1000 + "s");
 			await new Promise(f => setTimeout(f, this.timeout));
-			await this.connect(this.url, this.pairs, this.depth);
+			await this.connect(this.uri, this.pairs, this.depth);
 			reconnectionCount += 1; 
 		}
 	}
@@ -253,7 +255,7 @@ class WsConnector {
 			Logger.log(msg);
 			this.ws.send(msg);
 		} else {
-			Logger.log("Could not send Subscribe message, Websocket not ready");
+			Logger.log("Could not send subscribe message");
 		}
 	}
 
@@ -276,7 +278,7 @@ class WsConnector {
 			Logger.log(msg);
 			this.ws.send(msg);
 		} else {
-			Logger.log("Could not send Subscribe message, Websocket not ready");
+			Logger.log("Could not send unsubscribe message!");
 		}
 
 	}
@@ -305,7 +307,6 @@ class WsConnector {
 module Logger {
 	let configFile: ConfigFile;
 	export function log(msg: String) {
-		console.log(configFile);
 		if (configFile.general.enable_log) {
 			console.log(msg);
 		}
