@@ -191,38 +191,11 @@ class WsConnector {
             process.stdout.write("" + this.msgCounter);
             process.stdout.cursorTo(0);
         }
-        // we could under some circumstances run into packets from 'checkSubscription'
-        try {
-            let binanceStream = JSON.parse(rcvBytes.toString("utf8"));
-            if (binanceStream.data) {
-                this.mdb.write_dataset(binanceStream);
-            }
-        }
-        catch (e) {
-            Logger.log(JSON.parse(rcvBytes.toString("utf8")));
-            Logger.error(e);
-        }
-    }
-    checkSubscription() {
-        return __awaiter(this, void 0, void 0, function* () {
-            // change recieve callback function to parse the reply
-            this.ws.on("message", this.parseSubCheck.bind(this));
-            yield this.ws.send("{\"method\":\"LIST_SUBSCRIPTIONS\",\"id\":3}");
-        });
-    }
-    parseSubCheck(rcvBytes) {
-        let result = JSON.parse(rcvBytes.toString("utf8"));
-        // check if we recieved a valid answer to our request or normal data
-        if (result["result"]) {
-            let result = JSON.parse(rcvBytes.toString("utf8"));
-            if (result.result.length = 0) {
-                // change callback function back
-                this.ws.on("message", this.onMessage.bind(this));
-                this.subscribe(this.pairs, this.depth);
-            }
-        }
-        else {
-            this.onMessage(rcvBytes);
+        console.log(JSON.parse(rcvBytes.toString("utf8")));
+        console.log(this.msgCounter);
+        let binanceStream = JSON.parse(rcvBytes.toString("utf8"));
+        if (binanceStream.data) {
+            this.mdb.write_dataset(binanceStream);
         }
     }
     close() {
@@ -267,14 +240,14 @@ function main() {
         yield wssconnection.connect(configFile.binance.wss_url, configFile.binance.pairs, configFile.binance.depth);
         // check every x seconds if any messages were recieved
         setInterval(function () {
-            wssconnection.unsubscribe(configFile.binance.pairs, configFile.binance.depth);
             if (wssconnection.msgCounter == 0) {
-                notifier.send_msg("binance_depth connection stuck with 0 recieved messages, checking subscription");
-                wssconnection.checkSubscription();
+                notifier.send_msg("binance_depth connection stuck with 0 recieved messages, resubscribing...");
+                wssconnection.subscribe(configFile.binance.pairs, configFile.binance.depth);
             }
             if (configFile.general.enable_log) {
                 console.log(Date(), "recieved", wssconnection.msgCounter, "messages, thats", wssconnection.msgCounter / (configFile.binance.timeout / 1000), "messages per second,  subscribed pairs count:", wssconnection.pairs.length);
             }
+            wssconnection.unsubscribe(configFile.binance.pairs, configFile.binance.depth);
             wssconnection.msgCounter = 0;
         }, configFile.binance.timeout);
         process.on("SIGINT", function () {
