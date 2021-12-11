@@ -9,49 +9,20 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const mongodb_1 = require("mongodb");
-class MongoDBconnector {
-    constructor(mongo_url, dbname) {
-        this.knownCollections = [];
-        this.db_url = mongo_url;
-        this.db_name = dbname;
-        this.mclient = new mongodb_1.MongoClient(this.db_url);
-    }
-    connect() {
-        return __awaiter(this, void 0, void 0, function* () {
-            yield this.mclient.connect();
-            console.log("Mongodb connected");
-            this.mdb = this.mclient.db(this.db_name);
-        });
-    }
-    disconnect() {
-        return __awaiter(this, void 0, void 0, function* () {
-            yield this.mclient.close();
-            console.log("Mongodb disconnected");
-        });
-    }
-    read_data() {
-        return __awaiter(this, void 0, void 0, function* () {
-            if (!this.mdb) {
-                return;
-            }
-            const collection = this.mdb.collection("adabnb_depth20");
-            let test = yield collection.find().forEach(doc => {
-                // console.log(doc);
-            });
-        });
-    }
-}
+var nconf = require('nconf');
 function main() {
     return __awaiter(this, void 0, void 0, function* () {
-        const mongo_url = "mongodb://localhost:27017";
-        const dbname = "binance_depth";
-        let mdb = new MongoDBconnector(mongo_url, dbname);
-        yield mdb.connect();
-        let stime = Date.now();
-        yield mdb.read_data();
-        console.log("done", Date.now() - stime);
-        yield mdb.disconnect();
+        // 	const mongo_url: string = "mongodb://localhost:27017";
+        // 	const dbname: string = "binance_depth";
+        // 	let mdb = new MongoDBconnector(mongo_url, dbname);
+        // 	await mdb.connect();
+        // 	let stime = Date.now();
+        // 	await mdb.read_data();
+        // 	console.log("done", Date.now() - stime);
+        // 	await mdb.disconnect();
+        nconf.file({ file: 'depth_connector_mongo.json' });
+        let config = nconf.get();
+        console.log(config);
     });
 }
 main();

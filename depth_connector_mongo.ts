@@ -2,15 +2,18 @@ import WebSocket from 'ws';
 import {MongoClient, Db, Long, Timestamp} from 'mongodb';
 
 import {get} from 'https';
+var nconf = require('nconf');
 
 
 class TelegramNotifyer {
+	bot_enable: Boolean;
 	bot: string;
 	key: string;
 	chatid: string;
 	url: string;
 
-	constructor(bot: string, key: string, chatid: string, url: string = "https://api.telegram.org") {
+	constructor(bot_enable: Boolean, bot: string, key: string, chatid: string, url: string = "https://api.telegram.org") {
+		this.bot_enable = bot_enable;
 		this.bot = bot;
 		this.key = key;
 		this.chatid = chatid;
@@ -21,9 +24,11 @@ class TelegramNotifyer {
 	}
 
 	send_msg(message: string) {
-		let botUrl: string = this.url + this.bot + ":" + this.key + "/sendMessage?chat_id=" + this.chatid + "&text=" + message;
-		get(botUrl);
-		console.log("Telegram Message dispatched!");
+		if (this.bot_enable) {
+			let botUrl: string = this.url + this.bot + ":" + this.key + "/sendMessage?chat_id=" + this.chatid + "&text=" + message;
+			get(botUrl);
+			Logger.log("Telegram Message dispatched!");
+		}
 	}
 }
 
@@ -56,22 +61,26 @@ class MongoDBconnector {
 	knownCollections: string[] = [];
 
 	
-	constructor(mongo_url: string, dbname: string) {
-		this.db_url = mongo_url;
-		this.db_name = dbname;
+	constructor(configFile: ConfigFile) {
+		if (configFile.mongodb.authentication) {
+			this.db_url = "mongodb://" + configFile.mongodb.mongodb_username + ":" + configFile.mongodb.mongodb_password + "@" + configFile.mongodb.mongodb_host + ":" + configFile.mongodb.mongodb_port + "?retryWrites=true&w=majority&authSource=" + configFile.mongodb.mongodb_database;
+		} else {
+			this.db_url = "mongodb://" + configFile.mongodb.mongodb_host + ":" + configFile.mongodb.mongodb_port;
+		}
+		console.log(this.db_url);
+		this.db_name = configFile.mongodb.mongodb_database;
 		this.mclient = new MongoClient(this.db_url);
-
 	}
 
 	async connect() {
 		await this.mclient.connect();
-		console.log("Mongodb connected");
+		Logger.log("Mongodb connected");
 		this.mdb = this.mclient.db(this.db_name);
 	}
 
 	async disconnect() {
 		await this.mclient.close();
-		console.log("Mongodb disconnected");
+		Logger.log("Mongodb disconnected");
 	}
 
 	write_dataset(data: BinanceStream) {
@@ -95,10 +104,10 @@ class MongoDBconnector {
 		};
 
 		collection.insertOne(record).catch( (e) => {
-			console.error(e);
+			Logger.error(e);
 		});
-		// console.log(dbname);
-		// console.log(record);
+		// Logger.log(dbname);
+		// Logger.log(record);
 	}
 
 }
@@ -120,15 +129,16 @@ class WsConnector {
 	msgCounter: number= 0;
 
 	// remove retry count?
-	constructor(mdb: any, streamkey: string, telegramAlert: TelegramNotifyer, retry_count: number = 5, timeout: number = 10000 /*ms*/) {
+	// constructor(mdb: any, streamkey: string, retry_count: number = 5, timeout: number = 10000, telegramAlert: TelegramNotifyer) {
+	constructor(mdb: MongoDBconnector, configFile: ConfigFile, telegramAlert: TelegramNotifyer) {
 		this.mdb = mdb; // mongoDB connector
-		this.streamkey = streamkey; // name of the stream
-		this.telegramAlert = telegramAlert;
-		this.retry_count = retry_count;
-		this.timeout = timeout;
+		this.streamkey = configFile.binance.streamkey; // name of the stream
+		this.retry_count = configFile.binance.retry_count;
+		this.timeout = configFile.binance.timeout;
 		this.pairs = [];
 		this.depth = 20;
 		this.url = "";
+		this.telegramAlert = telegramAlert;
 		
 	}
 
@@ -149,12 +159,13 @@ class WsConnector {
 
 	async retryConnection(url: string) {
 		let reconnectionCount: number = 0;
-		console.log("disconnected, retrying connection");
+		Logger.log("disconnected, retrying connection");
 		this.telegramAlert.send_msg("disconnected, retrying connection");
 		await this.connect(this.url, this.pairs, this.depth);
 		// TODO retry count?
 		while (this.ws.readyState != WebSocket.OPEN) {
-			console.log("Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout/1000 + "s");
+			Logger.log("Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout/1000 + "s");
+
 			this.telegramAlert.send_msg("Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout/1000 + "s");
 			await new Promise(f => setTimeout(f, this.timeout));
 			await this.connect(this.url, this.pairs, this.depth);
@@ -163,14 +174,17 @@ class WsConnector {
 	}
 
 	onError(e: any) {
-		this.telegramAlert.send_msg("ERROR with depth_connector_mongo.js websocket!")};
+		this.telegramAlert.send_msg("ERROR with depth_connector_mongo.js websocket!");
+		Logger.error("ERROR with depth_connector_mongo.js websocket!");
+	}
+		
 
 	subscribe(pairs: string[], depth: number = 20) {
 		this.pairs = pairs;
 		this.depth = depth;
 
 		const streamNames = []
-		// console.log(this.pairs, this.pairs.length);
+		// Logger.log(this.pairs, this.pairs.length);
 		for (var i = 0; i < this.pairs.length; i++) {
 			streamNames.push(pairs[i].toLowerCase() + "@depth" + depth)
 		}
@@ -182,10 +196,10 @@ class WsConnector {
 		})
 
 		if (this.ws.readyState == WebSocket.OPEN) {
-			console.log(msg);
+			Logger.log(msg);
 			this.ws.send(msg);
 		} else {
-			console.log("Could not send Subscribe message, Websocket not ready");
+			Logger.log("Could not send Subscribe message, Websocket not ready");
 		}
 	}
 
@@ -205,10 +219,10 @@ class WsConnector {
 		})
 
 		if (this.ws.readyState == WebSocket.OPEN) {
-			console.log(msg);
+			Logger.log(msg);
 			this.ws.send(msg);
 		} else {
-			console.log("Could not send Subscribe message, Websocket not ready");
+			Logger.log("Could not send Subscribe message, Websocket not ready");
 		}
 
 	}
@@ -231,46 +245,94 @@ class WsConnector {
 		// disenage callback
 		this.ws.on("close");
 		this.ws.close();
-		console.log("ws closed");
+		Logger.log("ws closed");
+	}
+}
+
+interface ConfigFile {
+	"general": {
+        "log_interval": number,
+        "enable_log": Boolean,
+		"enable_err": Boolean,
+        "enable_telegram_alert": Boolean,
+    },
+    "telegram": {
+        "bot_name": string, 
+        "bot_key": string,
+        "chatid": string,
+        "telegram_url": string,
+    },
+    "binance": {
+        "wss_url": string, 
+        "streamkey": string,
+        "retry_count": number, 
+        "timeout": number,
+        "depth": number,
+        "pairs": string[],
+    },
+    "mongodb": {
+        "mongodb_host": string,
+        "mongodb_port": string,
+        "mongodb_database": string,
+        "authentication": Boolean,
+        "mongodb_username": string,
+        "mongodb_password": string,
+    }
+}
+
+
+module Logger {
+	let configFile: ConfigFile;
+	export function log(msg: String) {
+		console.log(configFile);
+		if (configFile.general.enable_log) {
+			console.log(msg);
+		}
+	}
+
+	export function error(msg: String) {
+		if (configFile.general.enable_err) {
+			console.error(msg);
+		}
+	}
+
+	export function setConfig(config: ConfigFile) {
+		configFile = config;
 	}
 }
 
 
 async function main() {
-	// progst
+	
+	// read config file
+	nconf.file({ file: 'depth_connector_mongo.json' });
+	
+	let configFile: ConfigFile = nconf.get();
+	Logger.setConfig(configFile);
+	Logger.log("starting up...");
 
-	let notifier = new TelegramNotifyer("bot2140834908", "AAHMHizO44TOo8L5fh3TdW0LQJIY1rJ9ogs", "2137572068");
+	var notifier: any = new TelegramNotifyer(configFile.general.enable_telegram_alert, configFile.telegram.bot_name, configFile.telegram.bot_key, configFile.telegram.chatid);
 
-	const mongo_url: string = "mongodb://localhost:27017/";
-	// const mongo_url: string = "mongodb://binance_depth:9iegZ3fDZTkPPQRMqJZ2@dev-sql.slice.local:27017?retryWrites=true&w=majority&authSource=binance_depth";
-	const dbname: string = "binance_depth";
-
-	let depth = 20; 
-	const wss_retry_count = 5;
-	const wss_retry_timeout = 1000; //delay in ms
-	const wss_url = 'wss://stream.binance.com:9443/';
-
-	const pairs = ['XRPBTC', 'XRPBNB', 'XRPETH', 'XRPUSDT', 'ADABTC', 'ADAETH', 'ADABNB', 'ADAUSDT', 'LINKBTC', 'LINKETH', 'LINKUSDT', 'LTCBTC', 'LTCETH', 'LTCBNB', 'LTCUSDT', 'XLMBTC', 'XLMETH', 'XLMBNB', 'XLMUSDT', 'XMRBTC', 'XMRETH', 'XMRBNB', 'XMRUSDT', 'TRXBTC', 'TRXETH', 'TRXBNB', 'TRXUSDT', 'VETBTC', 'VETETH', 'VETBNB', 'VETUSDT', 'NEOBTC', 'NEOETH', 'NEOBNB', 'NEOUSDT', 'ATOMBTC', 'ATOMBNB', 'ATOMUSDT', 'ETCBTC', 'ETCETH', 'ETCBNB', 'ETCUSDT', 'ZECBTC', 'ZECETH', 'ZECBNB', 'ZECUSDT', 'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ETHBTC', 'BNBBTC', 'BNBETH']
-
-
-	let mdb = new MongoDBconnector(mongo_url, dbname);
+	let mdb = new MongoDBconnector(configFile);
 	await mdb.connect();
-	let wssconnection = new WsConnector(mdb, "depth", notifier);
-	await wssconnection.connect(wss_url, pairs, depth);
+	let wssconnection = new WsConnector(mdb, configFile, notifier);
+	await wssconnection.connect(configFile.binance.wss_url, configFile.binance.pairs, configFile.binance.depth);
 
-	// check every 5 seconds if any messages were recieved
+	// check every x seconds if any messages were recieved
 	let timeout: number = 10000;
 	setInterval(function () {
 		if (wssconnection.msgCounter == 0) {
 			notifier.send_msg("binance_depth connection stuck with 0 recieved messages");
 		}
-		console.log(Date(), "recieved", wssconnection.msgCounter, "messages, thats", wssconnection.msgCounter/(timeout/1000), "messages per second, subscribed pairs count:", wssconnection.pairs.length);
+		if (configFile.general.enable_log) {
+			console.log(Date(),  "recieved",  wssconnection.msgCounter,  "messages, thats",  wssconnection.msgCounter/(timeout/1000),  "messages per second,  subscribed pairs count:",  wssconnection.pairs.length);
+		}
 		wssconnection.msgCounter = 0;
 	}, timeout); 
 
 	process.on("SIGINT", async function() {
-		console.log("Caught SIGINT Signal");
-		await wssconnection.unsubscribe(pairs, depth);
+		Logger.log("Caught SIGINT Signal");
+		await wssconnection.unsubscribe(configFile.binance.pairs, configFile.binance.depth);
 		await wssconnection.close();
 		await mdb.disconnect();
 	})
