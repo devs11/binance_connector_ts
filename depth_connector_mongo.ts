@@ -52,16 +52,51 @@ interface BinanceStream {
 	data: BinanceStreamData;
 }
 
+interface ConfigFile {
+	"general": {
+        "log_interval": number,
+        "enable_log": Boolean,
+		"enable_err": Boolean,
+        "enable_telegram_alert": Boolean,
+    },
+    "telegram": {
+        "bot_name": string, 
+        "bot_key": string,
+        "chatid": string,
+        "telegram_url": string,
+    },
+    "binance": {
+        "wss_url": string, 
+        "streamkey": string,
+        "retry_count": number, 
+        "timeout": number,
+        "depth": number,
+        "pairs": string[],
+    },
+    "mongodb": {
+        "mongodb_host": string,
+        "mongodb_port": string,
+        "mongodb_database": string,
+        "authentication": Boolean,
+        "mongodb_username": string,
+        "mongodb_password": string,
+    }
+}
 
+interface ListSubscriptions {
+	"result": string[],
+	"id": number,
+}
 class MongoDBconnector {
 	db_url: string;
 	db_name: any;
 	mdb?: Db;
 	mclient: MongoClient;
 	knownCollections: string[] = [];
+	telegramAlert: TelegramNotifyer;
 
 	
-	constructor(configFile: ConfigFile) {
+	constructor(configFile: ConfigFile, telegramAlert: TelegramNotifyer) {
 		if (configFile.mongodb.authentication) {
 			this.db_url = "mongodb://" + configFile.mongodb.mongodb_username + ":" + configFile.mongodb.mongodb_password + "@" + configFile.mongodb.mongodb_host + ":" + configFile.mongodb.mongodb_port + "?retryWrites=true&w=majority&authSource=" + configFile.mongodb.mongodb_database;
 		} else {
@@ -69,6 +104,7 @@ class MongoDBconnector {
 		}
 		console.log(this.db_url);
 		this.db_name = configFile.mongodb.mongodb_database;
+		this.telegramAlert = telegramAlert;
 		this.mclient = new MongoClient(this.db_url);
 	}
 
@@ -76,11 +112,24 @@ class MongoDBconnector {
 		await this.mclient.connect();
 		Logger.log("Mongodb connected");
 		this.mdb = this.mclient.db(this.db_name);
+
+		this.mclient.on('close', this.retry_connection);
+		this.mclient.on('reconnect', this.reconnected);
 	}
 
 	async disconnect() {
 		await this.mclient.close();
 		Logger.log("Mongodb disconnected");
+	}
+
+	retry_connection() {
+		Logger.error("Lost Database connection, retrying...");
+		this.telegramAlert.send_msg("ERROR with depth_connector_mongo.js websocket!");
+	}
+
+	reconnected() {
+		Logger.log("MongoDB reconnected, go back to sleep");
+		this.telegramAlert.send_msg("MongoDB reconnected");
 	}
 
 	write_dataset(data: BinanceStream) {
@@ -190,9 +239,9 @@ class WsConnector {
 		}
 
 		var msg = JSON.stringify({
-		"method": "SUBSCRIBE",
-		"params": streamNames,
-		"id": 1
+			"method": "SUBSCRIBE",
+			"params": streamNames,
+			"id": 1
 		})
 
 		if (this.ws.readyState == WebSocket.OPEN) {
@@ -213,9 +262,9 @@ class WsConnector {
 		}
 
 		var msg = JSON.stringify({
-		"method": "UNSUBSCRIBE",
-		"params": streamNames,
-		"id": 1
+			"method": "UNSUBSCRIBE",
+			"params": streamNames,
+			"id": 1
 		})
 
 		if (this.ws.readyState == WebSocket.OPEN) {
@@ -234,10 +283,36 @@ class WsConnector {
 			process.stdout.cursorTo(0);
 		}
 
-		let binanceStream: BinanceStream = JSON.parse(rcvBytes.toString("utf8"));
-		
-		if (binanceStream.data) {
-			this.mdb.write_dataset(binanceStream);
+		// we could under some circumstances run into packets from 'checkSubscription'
+		try {
+			let binanceStream: BinanceStream = JSON.parse(rcvBytes.toString("utf8"));
+			if (binanceStream.data) {
+				this.mdb.write_dataset(binanceStream);
+		}
+		} catch (e) {
+			Logger.log(JSON.parse(rcvBytes.toString("utf8")));
+			Logger.error(e);
+		}
+	}
+
+	async checkSubscription() {
+		// change recieve callback function to parse the reply
+		this.ws.on("message", this.parseSubCheck.bind(this));
+		await this.ws.send("{\"method\":\"LIST_SUBSCRIPTIONS\",\"id\":3}");
+	}
+
+	parseSubCheck(rcvBytes: Buffer) {
+		let result: any = JSON.parse(rcvBytes.toString("utf8"));
+		// check if we recieved a valid answer to our request or normal data
+		if (result["result"]) {
+			let result: ListSubscriptions = JSON.parse(rcvBytes.toString("utf8"));
+			if (result.result.length = 0) {
+				// change callback function back
+				this.ws.on("message", this.onMessage.bind(this));
+				this.subscribe(this.pairs, this.depth);
+			}
+		} else {
+			this.onMessage(rcvBytes);
 		}
 	}
 
@@ -248,38 +323,6 @@ class WsConnector {
 		Logger.log("ws closed");
 	}
 }
-
-interface ConfigFile {
-	"general": {
-        "log_interval": number,
-        "enable_log": Boolean,
-		"enable_err": Boolean,
-        "enable_telegram_alert": Boolean,
-    },
-    "telegram": {
-        "bot_name": string, 
-        "bot_key": string,
-        "chatid": string,
-        "telegram_url": string,
-    },
-    "binance": {
-        "wss_url": string, 
-        "streamkey": string,
-        "retry_count": number, 
-        "timeout": number,
-        "depth": number,
-        "pairs": string[],
-    },
-    "mongodb": {
-        "mongodb_host": string,
-        "mongodb_port": string,
-        "mongodb_database": string,
-        "authentication": Boolean,
-        "mongodb_username": string,
-        "mongodb_password": string,
-    }
-}
-
 
 module Logger {
 	let configFile: ConfigFile;
@@ -311,24 +354,24 @@ async function main() {
 	Logger.setConfig(configFile);
 	Logger.log("starting up...");
 
-	var notifier: any = new TelegramNotifyer(configFile.general.enable_telegram_alert, configFile.telegram.bot_name, configFile.telegram.bot_key, configFile.telegram.chatid);
-
-	let mdb = new MongoDBconnector(configFile);
+	var notifier: TelegramNotifyer = new TelegramNotifyer(configFile.general.enable_telegram_alert, configFile.telegram.bot_name, configFile.telegram.bot_key, configFile.telegram.chatid);
+	let mdb = new MongoDBconnector(configFile, notifier);
 	await mdb.connect();
 	let wssconnection = new WsConnector(mdb, configFile, notifier);
 	await wssconnection.connect(configFile.binance.wss_url, configFile.binance.pairs, configFile.binance.depth);
 
 	// check every x seconds if any messages were recieved
-	let timeout: number = 10000;
 	setInterval(function () {
+		wssconnection.unsubscribe(configFile.binance.pairs, configFile.binance.depth);
 		if (wssconnection.msgCounter == 0) {
-			notifier.send_msg("binance_depth connection stuck with 0 recieved messages");
+			notifier.send_msg("binance_depth connection stuck with 0 recieved messages, checking subscription");
+			wssconnection.checkSubscription();
 		}
 		if (configFile.general.enable_log) {
-			console.log(Date(),  "recieved",  wssconnection.msgCounter,  "messages, thats",  wssconnection.msgCounter/(timeout/1000),  "messages per second,  subscribed pairs count:",  wssconnection.pairs.length);
+			console.log(Date(),  "recieved",  wssconnection.msgCounter,  "messages, thats",  wssconnection.msgCounter/(configFile.binance.timeout/1000),  "messages per second,  subscribed pairs count:",  wssconnection.pairs.length);
 		}
 		wssconnection.msgCounter = 0;
-	}, timeout); 
+	}, configFile.binance.timeout); 
 
 	process.on("SIGINT", async function() {
 		Logger.log("Caught SIGINT Signal");
