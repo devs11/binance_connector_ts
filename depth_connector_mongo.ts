@@ -290,9 +290,16 @@ class WsConnector {
 			process.stdout.cursorTo(0);
 		}
 
-		let binanceStream: BinanceStream = JSON.parse(rcvBytes.toString("utf8"));
-		if (binanceStream.data) {
-			this.mdb.write_dataset(binanceStream);
+		try {
+			let binanceStream: BinanceStream = JSON.parse(rcvBytes.toString("utf8"));
+			if (binanceStream.data) {
+				this.mdb.write_dataset(binanceStream);
+			}
+		} catch (e: any) {
+			Logger.error("recieved unexpected data from Websocket");
+			this.telegramAlert.send_msg("recieved unexpected data from Websocket");
+			Logger.log(JSON.parse(rcvBytes.toString("utf8")));
+			Logger.error(e);
 		}
 	}
 
@@ -340,15 +347,28 @@ async function main() {
 	await wssconnection.connect(configFile.binance.wss_url, configFile.binance.pairs, configFile.binance.depth);
 
 	// check every x seconds if any messages were recieved
+	let spam_counter = 1;
+	let spam_max = 1;
 	setInterval(function () {
 		if (wssconnection.msgCounter == 0) {
-			notifier.send_msg("binance_depth connection stuck with 0 recieved messages, resubscribing...");
+			if (spam_counter == spam_max) {
+				notifier.send_msg("binance_depth connection stuck with 0 recieved messages, resubscribing...");
+				Logger.error("binance_depth connection stuck with 0 recieved messages, resubscribing...");
+				spam_counter = 1;
+				spam_max = spam_max + 1;
+			} else {
+				spam_counter = spam_counter + 1;
+			}
 			wssconnection.subscribe(configFile.binance.pairs, configFile.binance.depth);
-		}
-		if (configFile.general.enable_log) {
-			console.log(Date(),  "recieved",  wssconnection.msgCounter,  "messages, thats",  wssconnection.msgCounter/(configFile.general.check_interval/1000),  "messages per second,  subscribed pairs count:",  wssconnection.pairs.length);
+		} else {
+			if (configFile.general.enable_log) {
+				console.log(Date(),  "recieved",  wssconnection.msgCounter,  "messages, thats",  wssconnection.msgCounter/(configFile.general.check_interval/1000),  "messages per second,  subscribed pairs count:",  wssconnection.pairs.length);
+			}
 		}
 		wssconnection.msgCounter = 0;
+		spam_max = 1;
+		spam_counter = 1;
+
 	}, configFile.general.check_interval); 
 
 	process.on("SIGINT", async function() {
