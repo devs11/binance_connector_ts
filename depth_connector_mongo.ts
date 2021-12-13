@@ -193,7 +193,7 @@ class WsConnector {
 		
 	}
 
-	connect(url: string, pairs: string[], depth: number = 20) {
+	async connect(url: string, pairs: string[], depth: number = 20) {
 		if (url.charAt(url.length -1) != "/") {
 			url = url + "/";
 		}
@@ -334,6 +334,7 @@ async function main() {
 	nconf.file({ file: 'depth_connector_mongo.json' });
 	
 	let configFile: ConfigFile = nconf.get();
+	console.log(configFile);
 	Logger.setConfig(configFile);
 	Logger.log("starting up...");
 
@@ -347,25 +348,29 @@ async function main() {
 	let spam_counter = 1;
 	let spam_max = 1;
 	setInterval(function () {
-		if (wssconnection.msgCounter == 0) {
-			if (spam_counter == spam_max) {
-				notifier.send_msg("binance_depth connection stuck with 0 recieved messages, resubscribing...");
-				Logger.error("binance_depth connection stuck with 0 recieved messages, resubscribing...");
-				spam_counter = 1;
-				spam_max = spam_max + 1;
-			} else {
-				spam_counter = spam_counter + 1;
-			}
-			wssconnection.subscribe(configFile.binance.pairs, configFile.binance.depth);
-		} else {
-			if (configFile.general.enable_log) {
-				console.log(Date(),  "recieved",  wssconnection.msgCounter,  "messages, thats",  wssconnection.msgCounter/(configFile.general.check_interval/1000),  "messages per second,  subscribed pairs count:",  wssconnection.pairs.length);
-			}
-		}
-		wssconnection.msgCounter = 0;
-		spam_max = 1;
-		spam_counter = 1;
+		try {
 
+			if (wssconnection.msgCounter == 0) {
+				if (spam_counter == spam_max) {
+					notifier.send_msg("binance_depth connection stuck with 0 recieved messages, resubscribing...");
+					Logger.error("binance_depth connection stuck with 0 recieved messages, resubscribing...");
+					spam_counter = 1;
+					spam_max = spam_max + 1;
+				} else {
+					spam_counter = spam_counter + 1;
+				}
+				wssconnection.subscribe(configFile.binance.pairs, configFile.binance.depth);
+			} else {
+				if (configFile.general.enable_log) {
+					console.log(Date(),  "recieved",  wssconnection.msgCounter,  "messages, thats",  wssconnection.msgCounter/(configFile.general.check_interval/1000),  "messages per second,  subscribed pairs count:",  wssconnection.pairs.length);
+				}
+			}
+			wssconnection.msgCounter = 0;
+			spam_max = 1;
+			spam_counter = 1;
+		} catch (e: any) {
+			console.error(e);
+		}
 	}, configFile.general.check_interval); 
 
 	process.on("SIGINT", async function() {

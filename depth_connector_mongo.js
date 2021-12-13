@@ -50,7 +50,6 @@ class MongoDBconnector {
         else {
             this.db_url = "mongodb://" + configFile.mongodb.mongodb_host + ":" + configFile.mongodb.mongodb_port;
         }
-        Logger.log("Database URI: " + this.db_url);
         this.db_name = configFile.mongodb.mongodb_database;
         this.telegramAlert = telegramAlert;
         this.mclient = new mongodb_1.MongoClient(this.db_url);
@@ -84,10 +83,12 @@ class MongoDBconnector {
             return;
         }
         const collection = this.mdb.collection(dbname);
+        // if this is a unseen collection, create the index over time
         if (!this.knownCollections.includes(dbname)) {
             this.knownCollections.push(dbname);
             collection.createIndex({ time: 1 });
         }
+        // convert the float values from strings to flotas
         var record = {
             time: new Date(),
             lastUpdateId: data.data.lastUpdateId,
@@ -99,8 +100,6 @@ class MongoDBconnector {
         collection.insertOne(record).catch((e) => {
             Logger.error(e);
         });
-        // Logger.log(dbname);
-        // Logger.log(record);
     }
 }
 class WsConnector {
@@ -116,6 +115,7 @@ class WsConnector {
         this.depth = 20;
         this.uri = "";
         this.telegramAlert = telegramAlert;
+        this.configFile = configFile;
     }
     connect(url, pairs, depth = 20) {
         if (url.charAt(url.length - 1) != "/") {
@@ -137,13 +137,13 @@ class WsConnector {
             let reconnectionCount = 0;
             Logger.log("disconnected, retrying connection");
             this.telegramAlert.send_msg("disconnected, retrying connection");
-            yield this.connect(this.uri, this.pairs, this.depth);
+            yield this.connect(this.configFile.binance.wss_url, this.pairs, this.depth);
             // TODO retry count?
             while (this.ws.readyState != ws_1.default.OPEN) {
                 Logger.log("Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout / 1000 + "s");
                 this.telegramAlert.send_msg("Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout / 1000 + "s");
                 yield new Promise(f => setTimeout(f, this.timeout));
-                yield this.connect(this.uri, this.pairs, this.depth);
+                yield this.connect(this.configFile.binance.wss_url, this.pairs, this.depth);
                 reconnectionCount += 1;
             }
         });
@@ -174,24 +174,26 @@ class WsConnector {
         }
     }
     unsubscribe(pairs, depth = 20) {
-        this.pairs = pairs;
-        this.depth = depth;
-        const streamNames = [];
-        for (var i = 0; i < this.pairs.length; i++) {
-            streamNames.push(pairs[i].toLowerCase() + "@depth" + depth);
-        }
-        var msg = JSON.stringify({
-            "method": "UNSUBSCRIBE",
-            "params": streamNames,
-            "id": 1
+        return __awaiter(this, void 0, void 0, function* () {
+            this.pairs = pairs;
+            this.depth = depth;
+            const streamNames = [];
+            for (var i = 0; i < this.pairs.length; i++) {
+                streamNames.push(pairs[i].toLowerCase() + "@depth" + depth);
+            }
+            var msg = JSON.stringify({
+                "method": "UNSUBSCRIBE",
+                "params": streamNames,
+                "id": 1
+            });
+            if (this.ws.readyState == ws_1.default.OPEN) {
+                Logger.log(msg);
+                yield this.ws.send(msg);
+            }
+            else {
+                Logger.error("Could not send unsubscribe message!");
+            }
         });
-        if (this.ws.readyState == ws_1.default.OPEN) {
-            Logger.log(msg);
-            this.ws.send(msg);
-        }
-        else {
-            Logger.log("Could not send unsubscribe message!");
-        }
     }
     onMessage(rcvBytes) {
         this.msgCounter = this.msgCounter + 1;
@@ -213,10 +215,12 @@ class WsConnector {
         }
     }
     close() {
-        // disenage callback
-        this.ws.on("close");
-        this.ws.close();
-        Logger.log("ws closed");
+        return __awaiter(this, void 0, void 0, function* () {
+            // disenage callback
+            this.ws.on("close");
+            yield this.ws.close();
+            Logger.log("ws closed");
+        });
     }
 }
 var Logger;
@@ -244,6 +248,7 @@ function main() {
         // read config file
         nconf.file({ file: 'depth_connector_mongo.json' });
         let configFile = nconf.get();
+        console.log(configFile);
         Logger.setConfig(configFile);
         Logger.log("starting up...");
         var notifier = new TelegramNotifyer(configFile.general.enable_telegram_alert, configFile.telegram.bot_name, configFile.telegram.bot_key, configFile.telegram.chatid);
@@ -282,6 +287,7 @@ function main() {
                 yield wssconnection.unsubscribe(configFile.binance.pairs, configFile.binance.depth);
                 yield wssconnection.close();
                 yield mdb.disconnect();
+                process.exit(1);
             });
         });
     });
