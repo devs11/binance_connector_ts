@@ -88,10 +88,6 @@ interface ConfigFile {
     }
 }
 
-interface ListSubscriptions {
-	"result": string[],
-	"id": number,
-}
 class MongoDBconnector {
 	db_url: string;
 	db_name: any;
@@ -143,11 +139,13 @@ class MongoDBconnector {
 			return;
 		}
 		const collection = this.mdb.collection(dbname);
+		// if this is a unseen collection, create the index over time
 		if (!this.knownCollections.includes(dbname)) {
 			this.knownCollections.push(dbname);
 			collection.createIndex({time: 1});
 		}
 
+		// convert the float values from strings to flotas
 		var record = <MongoRecord> {
 			time: new Date(),
 			lastUpdateId: data.data.lastUpdateId,
@@ -160,10 +158,7 @@ class MongoDBconnector {
 		collection.insertOne(record).catch( (e) => {
 			Logger.error(e);
 		});
-		// Logger.log(dbname);
-		// Logger.log(record);
 	}
-
 }
 
 
