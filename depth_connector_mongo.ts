@@ -228,6 +228,8 @@ class WsConnector {
 	onError(e: any) {
 		this.telegramAlert.send_msg("ERROR with depth_connector_mongo.js websocket!");
 		Logger.error("ERROR with depth_connector_mongo.js websocket!");
+		this.mdb.disconnect();
+		process.exit(1);
 	}
 		
 
@@ -255,7 +257,7 @@ class WsConnector {
 		}
 	}
 
-	unsubscribe(pairs: string[], depth: number = 20) {
+	async unsubscribe(pairs: string[], depth: number = 20) {
 		this.pairs = pairs;
 		this.depth = depth;
 
@@ -272,7 +274,7 @@ class WsConnector {
 
 		if (this.ws.readyState == WebSocket.OPEN) {
 			Logger.log(msg);
-			this.ws.send(msg);
+			await this.ws.send(msg);
 		} else {
 			Logger.log("Could not send unsubscribe message!");
 		}
