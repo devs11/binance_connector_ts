@@ -229,7 +229,6 @@ class WsConnector {
 		this.telegramAlert.send_msg("ERROR with depth_connector_mongo.js websocket!");
 		Logger.error("ERROR with depth_connector_mongo.js websocket!");
 		this.mdb.disconnect();
-		process.exit(1);
 	}
 		
 
@@ -276,7 +275,7 @@ class WsConnector {
 			Logger.log(msg);
 			await this.ws.send(msg);
 		} else {
-			Logger.log("Could not send unsubscribe message!");
+			Logger.error("Could not send unsubscribe message!");
 		}
 
 	}
@@ -374,6 +373,7 @@ async function main() {
 		await wssconnection.unsubscribe(configFile.binance.pairs, configFile.binance.depth);
 		await wssconnection.close();
 		await mdb.disconnect();
+		process.exit(1);
 	})
 }
 
