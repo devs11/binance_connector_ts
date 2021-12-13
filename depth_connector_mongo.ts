@@ -334,7 +334,6 @@ async function main() {
 	nconf.file({ file: 'depth_connector_mongo.json' });
 	
 	let configFile: ConfigFile = nconf.get();
-	console.log(configFile);
 	Logger.setConfig(configFile);
 	Logger.log("starting up...");
 

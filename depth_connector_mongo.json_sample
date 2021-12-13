@@ -1,6 +1,6 @@
 {
     "general": {
-        "log_interval": 10000,
+        "check_interval": 10000,
         "enable_log": true,
         "enable_err": true,
         "enable_telegram_alert": false
