@@ -299,10 +299,10 @@ class WsConnector {
 		}
 	}
 
-	close() {
+	async close() {
 		// disenage callback
 		this.ws.on("close");
-		this.ws.close();
+		await this.ws.close();
 		Logger.log("ws closed");
 	}
 }
