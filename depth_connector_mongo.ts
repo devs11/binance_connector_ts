@@ -3,7 +3,8 @@ import {MongoClient, Db, Long, Timestamp} from 'mongodb';
 
 import {get} from 'https';
 var nconf = require('nconf');
-
+var os = require("os");
+var path = require('path');
 
 class TelegramNotifyer {
 	bot_enable: Boolean;
@@ -213,13 +214,13 @@ class WsConnector {
 	async retryConnection(url: string) {
 		let reconnectionCount: number = 0;
 		Logger.log("disconnected, retrying connection");
-		this.telegramAlert.send_msg("disconnected, retrying connection");
+		this.telegramAlert.send_msg("WSS disconnected, retrying connection");
 		await this.connect(this.configFile.binance.wss_url, this.pairs, this.depth);
 		// TODO retry count?
 		while (this.ws.readyState != WebSocket.OPEN) {
-			Logger.log("Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout/1000 + "s");
+			Logger.log(" WSS Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout/1000 + "s");
 
-			this.telegramAlert.send_msg("Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout/1000 + "s");
+			this.telegramAlert.send_msg("WSS Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout/1000 + "s");
 			await new Promise(f => setTimeout(f, this.timeout));
 			await this.connect(this.configFile.binance.wss_url, this.pairs, this.depth);
 			reconnectionCount += 1; 
@@ -342,6 +343,8 @@ async function main() {
 	await mdb.connect();
 	let wssconnection = new WsConnector(mdb, configFile, notifier);
 	await wssconnection.connect(configFile.binance.wss_url, configFile.binance.pairs, configFile.binance.depth);
+
+	notifier.send_msg("[" + os.hostname() + "] " + path.basename(__filename) + " started");
 
 	// check every x seconds if any messages were recieved
 	let spam_counter = 1;

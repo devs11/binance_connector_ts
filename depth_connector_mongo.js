@@ -16,6 +16,8 @@ const ws_1 = __importDefault(require("ws"));
 const mongodb_1 = require("mongodb");
 const https_1 = require("https");
 var nconf = require('nconf');
+var os = require("os");
+var path = require('path');
 class TelegramNotifyer {
     constructor(bot_enable, bot, key, chatid, url = "https://api.telegram.org") {
         this.bot_enable = bot_enable;
@@ -118,19 +120,21 @@ class WsConnector {
         this.configFile = configFile;
     }
     connect(url, pairs, depth = 20) {
-        if (url.charAt(url.length - 1) != "/") {
-            url = url + "/";
-        }
-        this.uri = url + "stream?streams=" + this.streamkey;
-        Logger.log("Binance URI: " + this.uri);
-        this.ws = new ws_1.default(this.uri);
-        this.pairs = pairs;
-        this.depth = depth;
-        this.ws.on("open", () => this.subscribe(pairs, depth));
-        this.ws.on("message", this.onMessage.bind(this));
-        this.ws.on("close", () => this.retryConnection(url));
-        this.ws.on("error", this.onError.bind(this));
-        Logger.log("Websocket connected.");
+        return __awaiter(this, void 0, void 0, function* () {
+            if (url.charAt(url.length - 1) != "/") {
+                url = url + "/";
+            }
+            this.uri = url + "stream?streams=" + this.streamkey;
+            Logger.log("Binance URI: " + this.uri);
+            this.ws = new ws_1.default(this.uri);
+            this.pairs = pairs;
+            this.depth = depth;
+            this.ws.on("open", () => this.subscribe(pairs, depth));
+            this.ws.on("message", this.onMessage.bind(this));
+            this.ws.on("close", () => this.retryConnection(url));
+            this.ws.on("error", this.onError.bind(this));
+            Logger.log("Websocket connected.");
+        });
     }
     retryConnection(url) {
         return __awaiter(this, void 0, void 0, function* () {
@@ -248,7 +252,6 @@ function main() {
         // read config file
         nconf.file({ file: 'depth_connector_mongo.json' });
         let configFile = nconf.get();
-        console.log(configFile);
         Logger.setConfig(configFile);
         Logger.log("starting up...");
         var notifier = new TelegramNotifyer(configFile.general.enable_telegram_alert, configFile.telegram.bot_name, configFile.telegram.bot_key, configFile.telegram.chatid);
@@ -256,30 +259,36 @@ function main() {
         yield mdb.connect();
         let wssconnection = new WsConnector(mdb, configFile, notifier);
         yield wssconnection.connect(configFile.binance.wss_url, configFile.binance.pairs, configFile.binance.depth);
+        notifier.send_msg("[" + os.hostname() + "] - " + path.basename(__filename) + " started");
         // check every x seconds if any messages were recieved
         let spam_counter = 1;
         let spam_max = 1;
         setInterval(function () {
-            if (wssconnection.msgCounter == 0) {
-                if (spam_counter == spam_max) {
-                    notifier.send_msg("binance_depth connection stuck with 0 recieved messages, resubscribing...");
-                    Logger.error("binance_depth connection stuck with 0 recieved messages, resubscribing...");
-                    spam_counter = 1;
-                    spam_max = spam_max + 1;
+            try {
+                if (wssconnection.msgCounter == 0) {
+                    if (spam_counter == spam_max) {
+                        notifier.send_msg("binance_depth connection stuck with 0 recieved messages, resubscribing...");
+                        Logger.error("binance_depth connection stuck with 0 recieved messages, resubscribing...");
+                        spam_counter = 1;
+                        spam_max = spam_max + 1;
+                    }
+                    else {
+                        spam_counter = spam_counter + 1;
+                    }
+                    wssconnection.subscribe(configFile.binance.pairs, configFile.binance.depth);
                 }
                 else {
-                    spam_counter = spam_counter + 1;
+                    if (configFile.general.enable_log) {
+                        console.log(Date(), "recieved", wssconnection.msgCounter, "messages, thats", wssconnection.msgCounter / (configFile.general.check_interval / 1000), "messages per second,  subscribed pairs count:", wssconnection.pairs.length);
+                    }
                 }
-                wssconnection.subscribe(configFile.binance.pairs, configFile.binance.depth);
+                wssconnection.msgCounter = 0;
+                spam_max = 1;
+                spam_counter = 1;
             }
-            else {
-                if (configFile.general.enable_log) {
-                    console.log(Date(), "recieved", wssconnection.msgCounter, "messages, thats", wssconnection.msgCounter / (configFile.general.check_interval / 1000), "messages per second,  subscribed pairs count:", wssconnection.pairs.length);
-                }
+            catch (e) {
+                console.error(e);
             }
-            wssconnection.msgCounter = 0;
-            spam_max = 1;
-            spam_counter = 1;
         }, configFile.general.check_interval);
         process.on("SIGINT", function () {
             return __awaiter(this, void 0, void 0, function* () {
