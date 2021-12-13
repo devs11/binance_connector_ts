@@ -103,7 +103,6 @@ class MongoDBconnector {
 		} else {
 			this.db_url = "mongodb://" + configFile.mongodb.mongodb_host + ":" + configFile.mongodb.mongodb_port;
 		}
-		Logger.log("Database URI: " + this.db_url);
 		this.db_name = configFile.mongodb.mongodb_database;
 		this.telegramAlert = telegramAlert;
 		this.mclient = new MongoClient(this.db_url);
@@ -177,6 +176,8 @@ class WsConnector {
 	ws: any;
 	msgCounter: number= 0;
 
+	configFile: ConfigFile;
+
 	// remove retry count?
 	// constructor(mdb: any, streamkey: string, retry_count: number = 5, timeout: number = 10000, telegramAlert: TelegramNotifyer) {
 	constructor(mdb: MongoDBconnector, configFile: ConfigFile, telegramAlert: TelegramNotifyer) {
@@ -188,11 +189,11 @@ class WsConnector {
 		this.depth = 20;
 		this.uri = "";
 		this.telegramAlert = telegramAlert;
+		this.configFile = configFile;
 		
 	}
 
 	connect(url: string, pairs: string[], depth: number = 20) {
-		this.uri = "";
 		if (url.charAt(url.length -1) != "/") {
 			url = url + "/";
 		}
@@ -213,14 +214,14 @@ class WsConnector {
 		let reconnectionCount: number = 0;
 		Logger.log("disconnected, retrying connection");
 		this.telegramAlert.send_msg("disconnected, retrying connection");
-		await this.connect(this.uri, this.pairs, this.depth);
+		await this.connect(this.configFile.binance.wss_url, this.pairs, this.depth);
 		// TODO retry count?
 		while (this.ws.readyState != WebSocket.OPEN) {
 			Logger.log("Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout/1000 + "s");
 
 			this.telegramAlert.send_msg("Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout/1000 + "s");
 			await new Promise(f => setTimeout(f, this.timeout));
-			await this.connect(this.uri, this.pairs, this.depth);
+			await this.connect(this.configFile.binance.wss_url, this.pairs, this.depth);
 			reconnectionCount += 1; 
 		}
 	}
@@ -228,7 +229,6 @@ class WsConnector {
 	onError(e: any) {
 		this.telegramAlert.send_msg("ERROR with depth_connector_mongo.js websocket!");
 		Logger.error("ERROR with depth_connector_mongo.js websocket!");
-		this.mdb.disconnect();
 	}
 		
 
