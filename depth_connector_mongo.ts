@@ -192,6 +192,7 @@ class WsConnector {
 	}
 
 	connect(url: string, pairs: string[], depth: number = 20) {
+		this.uri = "";
 		if (url.charAt(url.length -1) != "/") {
 			url = url + "/";
 		}
