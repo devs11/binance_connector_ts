@@ -9,7 +9,8 @@
         "bot_name": "", 
         "bot_key": "",
         "chatid": "",
-        "telegram_url": "https://api.telegram.org"
+        "telegram_url": "https://api.telegram.org",
+        "telegram_prefix": ""
     },
     "binance": {
         "wss_url": "wss://stream.binance.com:9443/", 

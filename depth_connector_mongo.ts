@@ -12,20 +12,25 @@ class TelegramNotifyer {
 	key: string;
 	chatid: string;
 	uri: string;
+	prefix: string;
 
-	constructor(bot_enable: Boolean, bot: string, key: string, chatid: string, url: string = "https://api.telegram.org") {
-		this.bot_enable = bot_enable;
-		this.bot = bot;
-		this.key = key;
-		this.chatid = chatid;
-		if (url.charAt(url.length -1) != "/") {
-			url = url + "/";
+
+	constructor(configFile: ConfigFile) {
+		this.bot_enable = configFile.general.enable_telegram_alert;
+		this.bot = configFile.telegram.bot_name;
+		this.key = configFile.telegram.bot_key;
+		this.chatid = configFile.telegram.chatid;
+		if (configFile.telegram.telegram_url.charAt(configFile.telegram.telegram_url.length -1) != "/") {
+			this.uri = configFile.telegram.telegram_url + "/";
+		} else {
+			this.uri = configFile.telegram.telegram_url;
 		}
-		this.uri = url;
+		this.prefix = configFile.telegram.telegram_prefix;
 	}
 
 	send_msg(message: string) {
 		if (this.bot_enable) {
+			message = this.prefix + " " + message;
 			let botUrl: string = this.uri + this.bot + ":" + this.key + "/sendMessage?chat_id=" + this.chatid + "&text=" + message;
 			try {
 				get(botUrl);
@@ -70,6 +75,7 @@ interface ConfigFile {
         "bot_key": string,
         "chatid": string,
         "telegram_url": string,
+		"telegram_prefix": string,
     },
     "binance": {
         "wss_url": string, 
@@ -217,9 +223,8 @@ class WsConnector {
 		this.telegramAlert.send_msg("WSS disconnected, retrying connection");
 		await this.connect(this.configFile.binance.wss_url, this.pairs, this.depth);
 		// TODO retry count?
-		while (this.ws.readyState != WebSocket.OPEN) {
+		while (this.ws.readyState == WebSocket.CLOSED) {
 			Logger.log(" WSS Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout/1000 + "s");
-
 			this.telegramAlert.send_msg("WSS Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout/1000 + "s");
 			await new Promise(f => setTimeout(f, this.timeout));
 			await this.connect(this.configFile.binance.wss_url, this.pairs, this.depth);
@@ -338,7 +343,7 @@ async function main() {
 	Logger.setConfig(configFile);
 	Logger.log("starting up...");
 
-	var notifier: TelegramNotifyer = new TelegramNotifyer(configFile.general.enable_telegram_alert, configFile.telegram.bot_name, configFile.telegram.bot_key, configFile.telegram.chatid);
+	var notifier: TelegramNotifyer = new TelegramNotifyer(configFile);
 	let mdb = new MongoDBconnector(configFile, notifier);
 	await mdb.connect();
 	let wssconnection = new WsConnector(mdb, configFile, notifier);

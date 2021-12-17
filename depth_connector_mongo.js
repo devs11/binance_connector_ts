@@ -19,18 +19,22 @@ var nconf = require('nconf');
 var os = require("os");
 var path = require('path');
 class TelegramNotifyer {
-    constructor(bot_enable, bot, key, chatid, url = "https://api.telegram.org") {
-        this.bot_enable = bot_enable;
-        this.bot = bot;
-        this.key = key;
-        this.chatid = chatid;
-        if (url.charAt(url.length - 1) != "/") {
-            url = url + "/";
+    constructor(configFile) {
+        this.bot_enable = configFile.general.enable_telegram_alert;
+        this.bot = configFile.telegram.bot_name;
+        this.key = configFile.telegram.bot_key;
+        this.chatid = configFile.telegram.chatid;
+        if (configFile.telegram.telegram_url.charAt(configFile.telegram.telegram_url.length - 1) != "/") {
+            this.uri = configFile.telegram.telegram_url + "/";
         }
-        this.uri = url;
+        else {
+            this.uri = configFile.telegram.telegram_url;
+        }
+        this.prefix = configFile.telegram.telegram_prefix;
     }
     send_msg(message) {
         if (this.bot_enable) {
+            message = this.prefix + " " + message;
             let botUrl = this.uri + this.bot + ":" + this.key + "/sendMessage?chat_id=" + this.chatid + "&text=" + message;
             try {
                 (0, https_1.get)(botUrl);
@@ -140,12 +144,12 @@ class WsConnector {
         return __awaiter(this, void 0, void 0, function* () {
             let reconnectionCount = 0;
             Logger.log("disconnected, retrying connection");
-            this.telegramAlert.send_msg("disconnected, retrying connection");
+            this.telegramAlert.send_msg("WSS disconnected, retrying connection");
             yield this.connect(this.configFile.binance.wss_url, this.pairs, this.depth);
             // TODO retry count?
-            while (this.ws.readyState != ws_1.default.OPEN) {
-                Logger.log("Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout / 1000 + "s");
-                this.telegramAlert.send_msg("Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout / 1000 + "s");
+            while (this.ws.readyState == ws_1.default.CLOSED) {
+                Logger.log(" WSS Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout / 1000 + "s");
+                this.telegramAlert.send_msg("WSS Connection attempt failed (" + reconnectionCount + "), retrying in " + this.timeout / 1000 + "s");
                 yield new Promise(f => setTimeout(f, this.timeout));
                 yield this.connect(this.configFile.binance.wss_url, this.pairs, this.depth);
                 reconnectionCount += 1;
@@ -254,12 +258,12 @@ function main() {
         let configFile = nconf.get();
         Logger.setConfig(configFile);
         Logger.log("starting up...");
-        var notifier = new TelegramNotifyer(configFile.general.enable_telegram_alert, configFile.telegram.bot_name, configFile.telegram.bot_key, configFile.telegram.chatid);
+        var notifier = new TelegramNotifyer(configFile);
         let mdb = new MongoDBconnector(configFile, notifier);
         yield mdb.connect();
         let wssconnection = new WsConnector(mdb, configFile, notifier);
         yield wssconnection.connect(configFile.binance.wss_url, configFile.binance.pairs, configFile.binance.depth);
-        notifier.send_msg("[" + os.hostname() + "] - " + path.basename(__filename) + " started");
+        notifier.send_msg("[" + os.hostname() + "] " + path.basename(__filename) + " started");
         // check every x seconds if any messages were recieved
         let spam_counter = 1;
         let spam_max = 1;
