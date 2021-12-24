@@ -181,6 +181,26 @@ class WsConnector {
             Logger.log("Could not send subscribe message");
         }
     }
+    resubscribe() {
+        if (this.ws.readyState == ws_1.default.OPEN) {
+            this.subscribe(this.configFile.binance.pairs, this.configFile.binance.depth);
+        }
+        else {
+            try {
+                this.unsubscribe(this.configFile.binance.pairs, this.configFile.binance.depth);
+            }
+            catch (e) {
+                Logger.error(e);
+            }
+            try {
+                this.close();
+            }
+            catch (e) {
+                Logger.error(e);
+            }
+            this.connect(this.configFile.binance.wss_url, this.configFile.binance.pairs, this.configFile.binance.depth);
+        }
+    }
     unsubscribe(pairs, depth = 20) {
         return __awaiter(this, void 0, void 0, function* () {
             this.pairs = pairs;
@@ -279,7 +299,7 @@ function main() {
                     else {
                         spam_counter = spam_counter + 1;
                     }
-                    wssconnection.subscribe(configFile.binance.pairs, configFile.binance.depth);
+                    wssconnection.resubscribe();
                 }
                 else {
                     if (configFile.general.enable_log) {

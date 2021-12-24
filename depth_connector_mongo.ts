@@ -262,6 +262,26 @@ class WsConnector {
 		}
 	}
 
+	resubscribe() {
+		if (this.ws.readyState == WebSocket.OPEN) {
+			this.subscribe(this.configFile.binance.pairs, this.configFile.binance.depth);
+		} else {
+			try {
+				this.unsubscribe(this.configFile.binance.pairs, this.configFile.binance.depth);
+			} catch (e: any) {
+				Logger.error(e);
+			}
+			
+			try {
+				this.close();
+			} catch (e: any) {
+				Logger.error(e);
+			}
+
+			this.connect(this.configFile.binance.wss_url, this.configFile.binance.pairs, this.configFile.binance.depth);
+		}
+	}
+
 	async unsubscribe(pairs: string[], depth: number = 20) {
 		this.pairs = pairs;
 		this.depth = depth;
@@ -366,7 +386,7 @@ async function main() {
 				} else {
 					spam_counter = spam_counter + 1;
 				}
-				wssconnection.subscribe(configFile.binance.pairs, configFile.binance.depth);
+				wssconnection.resubscribe();
 			} else {
 				if (configFile.general.enable_log) {
 					console.log(Date(),  "recieved",  wssconnection.msgCounter,  "messages, thats",  wssconnection.msgCounter/(configFile.general.check_interval/1000),  "messages per second,  subscribed pairs count:",  wssconnection.pairs.length);
